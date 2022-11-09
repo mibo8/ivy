@@ -99,7 +99,7 @@ def test_linear(
         max_num_dims=1,
         min_dim_size=2,
     ),
-    prob=helpers.floats(min_value=0, max_value=0.9, width=64),
+    prob=helpers.floats(min_value=0, max_value=0.9),
     scale=st.booleans(),
     num_positional_args=helpers.num_positional_args(fn_name="dropout"),
 )
@@ -132,12 +132,69 @@ def test_dropout(
         x=x[0],
         prob=prob,
         scale=scale,
-        dtype=dtype,
     )
     ret = helpers.flatten_and_to_np(ret=ret)
     for u in ret:
         # cardinality test
         assert u.shape == x[0].shape
+
+
+# dropout1d
+@handle_cmd_line_args
+@given(
+    dtype_and_x=helpers.dtype_and_values(
+        available_dtypes=helpers.get_dtypes("float"),
+        min_value=0,
+        max_value=50,
+        allow_inf=False,
+        min_num_dims=2,
+        max_num_dims=3,
+        min_dim_size=1,
+        max_dim_size=5,
+    ),
+    prob=helpers.floats(min_value=0, max_value=0.9),
+    training=st.booleans(),
+    data_format=st.sampled_from(["NWC", "NCW"]),
+    num_positional_args=helpers.num_positional_args(fn_name="dropout1d"),
+)
+def test_dropout1d(
+    *,
+    dtype_and_x,
+    prob,
+    training,
+    data_format,
+    as_variable,
+    with_out,
+    num_positional_args,
+    native_array,
+    container,
+    instance_method,
+    fw,
+    device,
+):
+    dtype, x = dtype_and_x
+    ret, gt_ret = helpers.test_function(
+        input_dtypes=dtype,
+        as_variable_flags=as_variable,
+        with_out=with_out,
+        num_positional_args=num_positional_args,
+        native_array_flags=native_array,
+        container_flags=container,
+        instance_method=instance_method,
+        fw=fw,
+        fn_name="dropout1d",
+        test_values=False,
+        x=x[0],
+        prob=prob,
+        training=training,
+        data_format=data_format,
+        return_flat_np_arrays=True,
+    )
+    ret = helpers.flatten_and_to_np(ret=ret)
+    gt_ret = helpers.flatten_and_to_np(ret=gt_ret)
+    for u, v, w in zip(ret, gt_ret, x):
+        # cardinality test
+        assert u.shape == v.shape == w.shape
 
 
 # Attention #
@@ -150,7 +207,7 @@ def x_and_scaled_attention(draw, dtypes):
     num_queries = draw(helpers.ints(min_value=1, max_value=2))
     num_keys = draw(helpers.ints(min_value=1, max_value=2))
     feat_dim = draw(helpers.ints(min_value=1, max_value=2))
-    scale = draw(helpers.floats(min_value=0.1, max_value=1, width=64))
+    scale = draw(helpers.floats(min_value=0.1, max_value=1))
 
     q_shape = (1,) + (num_queries,) + (feat_dim,)
     k_shape = (1,) + (num_keys,) + (feat_dim,)
@@ -235,7 +292,7 @@ def x_and_mha(draw, dtypes):
     x_mha_shape = (num_queries,) + (feat_dim * num_heads,)
     context_shape = (num_keys,) + (2 * feat_dim * num_heads,)
     mask_shape = (num_queries,) + (num_keys,)
-    scale = draw(helpers.floats(min_value=0.1, max_value=1, width=64))
+    scale = draw(helpers.floats(min_value=0.1, max_value=1))
     x_mha = draw(
         helpers.array_values(
             dtype=dtype[0],
@@ -352,7 +409,8 @@ def x_and_filters(
     else:
         group_list = list(filter(lambda x: (output_channels % x == 0), group_list))
     fc = draw(st.sampled_from(group_list)) if general else 1
-    dilations = draw(st.integers(1, 3))
+    # tensorflow backprop doesn't support dilations more than 1 on CPU
+    dilations = 1
     if dim == 2:
         data_format = draw(st.sampled_from(["NCHW"]))
     elif dim == 1:
@@ -461,6 +519,7 @@ def test_conv1d(
         fn_name="conv1d",
         rtol_=1e-02,
         atol_=1e-02,
+        test_gradients=True,
         ground_truth_backend="jax",
         x=x,
         filters=filters,
@@ -503,6 +562,7 @@ def test_conv1d_transpose(
         fn_name="conv1d_transpose",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         # tensorflow does not work with dilations > 1 on cpu
         ground_truth_backend="jax",
         x=x,
@@ -546,6 +606,7 @@ def test_conv2d(
         fn_name="conv2d",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         ground_truth_backend="jax",
         x=x,
         filters=filters,
@@ -592,6 +653,7 @@ def test_conv2d_transpose(
         rtol_=1e-2,
         atol_=1e-2,
         device_=device,
+        test_gradients=True,
         # tensorflow does not work with dilations > 1 on cpu
         ground_truth_backend="jax",
         x=x,
@@ -639,6 +701,7 @@ def test_depthwise_conv2d(
         fn_name="depthwise_conv2d",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         # tensorflow does not support dilations > 1 and stride > 1
         ground_truth_backend="jax",
         x=x,
@@ -681,6 +744,7 @@ def test_conv3d(
         fn_name="conv3d",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         ground_truth_backend="jax",
         x=x,
         filters=filters,
@@ -726,6 +790,7 @@ def test_conv_general_dilated(
         fn_name="conv_general_dilated",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         # tensorflow does not work with dilations > 1 on cpu
         ground_truth_backend="jax",
         x=x,
@@ -775,6 +840,7 @@ def test_conv_general_transpose(
         fn_name="conv_general_transpose",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         # tensorflow does not work with dilations > 1 on cpu
         ground_truth_backend="jax",
         x=x,
@@ -824,6 +890,7 @@ def test_conv3d_transpose(
         fn_name="conv3d_transpose",
         rtol_=1e-2,
         atol_=1e-2,
+        test_gradients=True,
         ground_truth_backend="jax",
         x=x,
         filters=filters,
@@ -942,6 +1009,7 @@ def test_lstm_update(
         fn_name="lstm_update",
         rtol_=1e-01,
         atol_=1e-01,
+        test_gradients=True,
         x=x_lstm,
         init_h=init_h,
         init_c=init_c,
